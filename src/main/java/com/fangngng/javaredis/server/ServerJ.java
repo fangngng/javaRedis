@@ -64,7 +64,6 @@ public class ServerJ {
             // read
             aofPersistent.read();
 
-
             ServerJ serverJ = new ServerJ(3333);
             serverJ.setAofPersistent(aofPersistent);
             serverJ.start();

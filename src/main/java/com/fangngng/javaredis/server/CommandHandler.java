@@ -17,6 +17,8 @@ public class CommandHandler {
     public static Map<String, HashMap<String, String>> hmap = new HashMap<>();
     public static ReentrantReadWriteLock hmapLock = new ReentrantReadWriteLock();
 
+    public static Map<String, Long> expireMap = new HashMap<>();
+
     static{
         // ping command
         Function<RespValue, RespValue> ping = new Function<RespValue, RespValue>() {
@@ -42,6 +44,8 @@ public class CommandHandler {
                 String key = respValue.getArray()[1].getBulk();
                 String value = respValue.getArray()[2].getBulk();
 
+                expireIfNeeded(key);
+
                 ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
                 writeLock.lock();
                 try {
@@ -64,6 +68,8 @@ public class CommandHandler {
 
                 String key = respValue.getArray()[1].getBulk();
                 String value = null;
+
+                expireIfNeeded(key);
 
                 ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
                 readLock.lock();
@@ -88,6 +94,8 @@ public class CommandHandler {
                 String key = respValue.getArray()[2].getBulk();
                 String value = respValue.getArray()[3].getBulk();
 
+                expireIfNeeded(hash);
+
                 ReentrantReadWriteLock.WriteLock writeLock = hmapLock.writeLock();
                 writeLock.lock();
                 try {
@@ -110,6 +118,8 @@ public class CommandHandler {
 
                 String hash = respValue.getArray()[1].getBulk();
                 String key = respValue.getArray()[2].getBulk();
+
+                expireIfNeeded(hash);
 
                 ReentrantReadWriteLock.ReadLock readLock = hmapLock.readLock();
                 readLock.lock();
@@ -135,6 +145,8 @@ public class CommandHandler {
                 }
 
                 String hash = respValue.getArray()[1].getBulk();
+
+                expireIfNeeded(hash);
 
                 ReentrantReadWriteLock.ReadLock readLock = hmapLock.readLock();
                 readLock.lock();
@@ -163,6 +175,87 @@ public class CommandHandler {
             }
         };
 
+        // PEXPIREAT key timestamp
+        Function<RespValue, RespValue> pexpireat = new Function<RespValue, RespValue>() {
+            @Override
+            public RespValue apply(RespValue respValue) {
+                if(respValue == null || respValue.getArray().length != 3){
+                    return RespValue.error("error command format");
+                }
+
+                String key = respValue.getArray()[1].getBulk();
+                String expire = respValue.getArray()[2].getBulk();
+
+                expireIfNeeded(key);
+
+                expireMap.put(key, Long.parseLong(expire));
+
+                return RespValue.ok();
+            }
+        };
+
+
+        // expire key seconds
+        Function<RespValue, RespValue> expire = new Function<RespValue, RespValue>() {
+            @Override
+            public RespValue apply(RespValue respValue) {
+                if(respValue == null || respValue.getArray().length != 3){
+                    return RespValue.error("error command format");
+                }
+
+                String key = respValue.getArray()[1].getBulk();
+                String expire = respValue.getArray()[2].getBulk();
+
+                expireIfNeeded(key);
+
+                long currentTimeMillis = System.currentTimeMillis();
+                expireMap.put(key, currentTimeMillis + Integer.parseInt(expire)* 1000L);
+
+                return RespValue.ok();
+            }
+        };
+
+        // delete
+        Function<RespValue, RespValue> delete = new Function<RespValue, RespValue>() {
+            @Override
+            public RespValue apply(RespValue respValue) {
+                if(respValue == null || respValue.getArray().length != 2){
+                    return RespValue.error("error command format");
+                }
+
+                String key = respValue.getArray()[1].getBulk();
+                map.remove(key);
+                hmap.remove(key);
+                expireMap.remove(key);
+
+                return RespValue.ok();
+            }
+        };
+
+        // ttl key
+        Function<RespValue, RespValue> ttl = new Function<RespValue, RespValue>() {
+            @Override
+            public RespValue apply(RespValue respValue) {
+                if(respValue == null || respValue.getArray().length != 2){
+                    return RespValue.error("error command format");
+                }
+
+                String key = respValue.getArray()[1].getBulk();
+                long currentTimeMillis = System.currentTimeMillis();
+                if(expireMap.containsKey(key)){
+                    long seconds = (expireMap.get(key) - currentTimeMillis) / 1000L;
+                    if(seconds < 0){
+                        delete.apply(respValue);
+                        return RespValue.error("key expired");
+                    }else{
+                        return RespValue.bulk(String.valueOf(seconds));
+                    }
+                }
+
+                return RespValue.bulk("-1");
+            }
+        };
+
 
         handlers.put("ping", ping);
         handlers.put("set", set);
@@ -170,8 +263,19 @@ public class CommandHandler {
         handlers.put("hset", hset);
         handlers.put("hget", hget);
         handlers.put("hgetall", hgetall);
+        handlers.put("pexpireat", pexpireat);
+        handlers.put("expire", expire);
+        handlers.put("ttl", ttl);
+        handlers.put("del", delete);
     }
 
+    public static void expireIfNeeded(String key){
+        if(expireMap.containsKey(key) && expireMap.get(key) < System.currentTimeMillis()){
+            map.remove(key);
+            hmap.remove(key);
+            expireMap.remove(key);
+        }
+    }
 
 
 }

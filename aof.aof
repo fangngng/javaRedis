@@ -1,1 +1,4 @@
 *3\r\n$3\r\nset\r\n$1\r\nx\r\n$1\r\n1\r\n
+*3\r\n$9\r\npexpireat\r\n$1\r\nx\r\n$13\r\n1747834203210\r\n
+*3\r\n$3\r\nset\r\n$1\r\nx\r\n$1\r\n2\r\n
+*2\r\n$3\r\ndel\r\n$1\r\nx\r\n
