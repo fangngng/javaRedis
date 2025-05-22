@@ -1,5 +1,7 @@
 package com.fangngng.javaredis.server;
 
+import io.netty.util.internal.StringUtil;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -256,17 +258,74 @@ public class CommandHandler {
             }
         };
 
+        Function<RespValue, RespValue> incr = new Function<RespValue, RespValue>() {
+            @Override
+            public RespValue apply(RespValue respValue) {
+                if(respValue == null || respValue.getArray().length != 2){
+                    return RespValue.error("error command format");
+                }
+
+                String key = respValue.getArray()[1].getBulk();
+
+                ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
+                writeLock.lock();
+                try {
+                    String value = map.get(key);
+                    if(value == null || !isInteger(value)){
+                        return RespValue.error("not int type");
+                    }
+                    int end = Integer.parseInt(value) + 1;
+                    map.put(key, String.valueOf(end));
+                    return RespValue.bulk(String.valueOf(end));
+                }finally {
+                    writeLock.unlock();
+                }
+            }
+        };
+
+        Function<RespValue, RespValue> decr = new Function<RespValue, RespValue>() {
+            @Override
+            public RespValue apply(RespValue respValue) {
+                if(respValue == null || respValue.getArray().length != 2){
+                    return RespValue.error("error command format");
+                }
+
+                String key = respValue.getArray()[1].getBulk();
+
+                ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
+                writeLock.lock();
+                try {
+                    String value = map.get(key);
+                    if(value == null || !isInteger(value)){
+                        return RespValue.error("not int type");
+                    }
+                    int end = Integer.parseInt(value) - 1;
+                    map.put(key, String.valueOf(end));
+                    return RespValue.bulk(String.valueOf(end));
+                }finally {
+                    writeLock.unlock();
+                }
+            }
+        };
+
 
         handlers.put("ping", ping);
+
         handlers.put("set", set);
         handlers.put("get", get);
+
         handlers.put("hset", hset);
         handlers.put("hget", hget);
         handlers.put("hgetall", hgetall);
+
         handlers.put("pexpireat", pexpireat);
         handlers.put("expire", expire);
         handlers.put("ttl", ttl);
+
         handlers.put("del", delete);
+
+        handlers.put("incr", incr);
+        handlers.put("decr", decr);
     }
 
     public static void expireIfNeeded(String key){
@@ -275,6 +334,11 @@ public class CommandHandler {
             hmap.remove(key);
             expireMap.remove(key);
         }
+    }
+
+    public static boolean isInteger(String str) {
+        // 使用正则表达式判断字符串是否匹配整数模式
+        return str.matches("^-?\\d+$");
     }
 
 
