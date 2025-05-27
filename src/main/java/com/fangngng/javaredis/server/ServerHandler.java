@@ -2,10 +2,8 @@ package com.fangngng.javaredis.server;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.util.internal.StringUtil;
 
 import java.nio.charset.StandardCharsets;
-import java.util.function.Function;
 
 public class ServerHandler extends SimpleChannelInboundHandler<String> {
 
@@ -34,24 +32,16 @@ public class ServerHandler extends SimpleChannelInboundHandler<String> {
             return;
         }
 
-
-        String command = read.getArray()[0].getBulk().toLowerCase();
-        Function<RespValue, RespValue> handler = CommandHandler.handlers.get(command);
-        if(handler == null){
-            System.out.println("error command");
-            ctx.writeAndFlush(new RESPWrite().write(RespValue.error("error command")));
-            return;
-        }
-
-        RespValue resp = handler.apply(read);
+        RespValue resp = CommandWorker.workForCommand(read);
 
         // write to aof
-        aofForCommand(command, read);
+        aofForCommand(read);
 
         ctx.writeAndFlush(new RESPWrite().write(resp));
     }
 
-    private void aofForCommand(String command, RespValue respValue){
+    private void aofForCommand(RespValue respValue){
+        String command = respValue.getArray()[0].getBulk().toLowerCase();
         if("set".equalsIgnoreCase(command) || "hset".equalsIgnoreCase(command) || "del".equalsIgnoreCase(command)){
             this.aofPersistent.write(new RESPWrite().write(respValue).getBytes(StandardCharsets.UTF_8));
         }

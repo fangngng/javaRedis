@@ -1,10 +1,13 @@
 package com.fangngng.javaredis.server;
 
+import com.fangngng.javaredis.server.DTO.ZsetNode;
 import io.netty.util.internal.StringUtil;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
@@ -12,6 +15,7 @@ import java.util.function.Function;
 public class CommandHandler {
 
     public static Map<String, Function<RespValue, RespValue>> handlers = new HashMap<>();
+    public static Map<String, Boolean> commandWriteMap = new HashMap<>();
 
     public static Map<String, String> map = new HashMap<>();
     public static ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -20,6 +24,8 @@ public class CommandHandler {
     public static ReentrantReadWriteLock hmapLock = new ReentrantReadWriteLock();
 
     public static Map<String, Long> expireMap = new HashMap<>();
+
+    public static Map<String, ConcurrentSkipListSet<ZsetNode>> zsetMap = new HashMap<>();
 
     static{
         // ping command
@@ -48,12 +54,12 @@ public class CommandHandler {
 
                 expireIfNeeded(key);
 
-                ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
-                writeLock.lock();
+//                ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
+//                writeLock.lock();
                 try {
                     map.put(key, value);
                 }finally {
-                    writeLock.unlock();
+//                    writeLock.unlock();
                 }
 
                 return RespValue.ok();
@@ -73,12 +79,12 @@ public class CommandHandler {
 
                 expireIfNeeded(key);
 
-                ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
-                readLock.lock();
+//                ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
+//                readLock.lock();
                 try {
                     value = map.get(key);
                 }finally {
-                    readLock.unlock();
+//                    readLock.unlock();
                 }
                 return new RespValue("string", value);
             }
@@ -98,13 +104,13 @@ public class CommandHandler {
 
                 expireIfNeeded(hash);
 
-                ReentrantReadWriteLock.WriteLock writeLock = hmapLock.writeLock();
-                writeLock.lock();
+//                ReentrantReadWriteLock.WriteLock writeLock = hmapLock.writeLock();
+//                writeLock.lock();
                 try {
                     hmap.putIfAbsent(hash, new HashMap<>());
                     hmap.get(hash).put(key, value);
                 } finally {
-                    writeLock.unlock();
+//                    writeLock.unlock();
                 }
 
                 return RespValue.ok();
@@ -123,13 +129,13 @@ public class CommandHandler {
 
                 expireIfNeeded(hash);
 
-                ReentrantReadWriteLock.ReadLock readLock = hmapLock.readLock();
-                readLock.lock();
+//                ReentrantReadWriteLock.ReadLock readLock = hmapLock.readLock();
+//                readLock.lock();
                 HashMap<String, String> hashMap = null;
                 try {
                     hashMap = hmap.get(hash);
                 } finally {
-                    readLock.unlock();
+//                    readLock.unlock();
                 }
 
                 if(hashMap != null){
@@ -150,13 +156,13 @@ public class CommandHandler {
 
                 expireIfNeeded(hash);
 
-                ReentrantReadWriteLock.ReadLock readLock = hmapLock.readLock();
-                readLock.lock();
+//                ReentrantReadWriteLock.ReadLock readLock = hmapLock.readLock();
+//                readLock.lock();
                 HashMap<String, String> hashMap = null;
                 try {
                     hashMap = hmap.get(hash);
                 } finally {
-                    readLock.unlock();
+//                    readLock.unlock();
                 }
 
                 if(hashMap != null){
@@ -267,8 +273,8 @@ public class CommandHandler {
 
                 String key = respValue.getArray()[1].getBulk();
 
-                ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
-                writeLock.lock();
+//                ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
+//                writeLock.lock();
                 try {
                     String value = map.get(key);
                     if(value == null || !isInteger(value)){
@@ -278,7 +284,7 @@ public class CommandHandler {
                     map.put(key, String.valueOf(end));
                     return RespValue.bulk(String.valueOf(end));
                 }finally {
-                    writeLock.unlock();
+//                    writeLock.unlock();
                 }
             }
         };
@@ -292,8 +298,8 @@ public class CommandHandler {
 
                 String key = respValue.getArray()[1].getBulk();
 
-                ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
-                writeLock.lock();
+//                ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
+//                writeLock.lock();
                 try {
                     String value = map.get(key);
                     if(value == null || !isInteger(value)){
@@ -303,10 +309,72 @@ public class CommandHandler {
                     map.put(key, String.valueOf(end));
                     return RespValue.bulk(String.valueOf(end));
                 }finally {
-                    writeLock.unlock();
+//                    writeLock.unlock();
                 }
             }
         };
+
+        // zadd
+        Function<RespValue, RespValue> zadd = new Function<RespValue, RespValue>() {
+            @Override
+            public RespValue apply(RespValue respValue) {
+                if(respValue == null || respValue.getArray().length != 4){
+                    return RespValue.error("error command format");
+                }
+
+                String key = respValue.getArray()[1].getBulk();
+                String score = respValue.getArray()[2].getBulk();
+                String value = respValue.getArray()[3].getBulk();
+
+//                ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
+//                writeLock.lock();
+                try {
+                    if(score == null || !isDouble(score)){
+                        return RespValue.error("not int type");
+                    }
+                    zsetMap.putIfAbsent(key, new ConcurrentSkipListSet<>(new Comparator<ZsetNode>() {
+                        @Override
+                        public int compare(ZsetNode o1, ZsetNode o2) {
+                            return Double.valueOf(o1.getScore()).compareTo(Double.valueOf(o2.getScore()));
+                        }
+                    }));
+                    zsetMap.get(key).add(new ZsetNode(value, score));
+                    return RespValue.ok();
+                }finally {
+//                    writeLock.unlock();
+                }
+            }
+        };
+
+        // zcount key min max
+        Function<RespValue, RespValue> acount = new Function<RespValue, RespValue>() {
+            @Override
+            public RespValue apply(RespValue respValue) {
+                if(respValue == null || respValue.getArray().length < 4){
+                    return RespValue.error("error command format");
+                }
+
+
+                String key = respValue.getArray()[1].getBulk();
+                String min = respValue.getArray()[2].getBulk();
+                String max = respValue.getArray()[3].getBulk();
+
+                ConcurrentSkipListSet<ZsetNode> zsetNodes = zsetMap.get(key);
+                if(zsetNodes == null){
+                    return RespValue.nul();
+                }
+
+//                zsetNodes.
+
+                return null;
+            }
+        };
+
+        // zrange
+
+        // zrangebyscore
+
+        // zrem
 
 
         handlers.put("ping", ping);
@@ -326,6 +394,20 @@ public class CommandHandler {
 
         handlers.put("incr", incr);
         handlers.put("decr", decr);
+
+        handlers.put("zadd", zadd);
+        handlers.put("zadd", zadd);
+
+
+
+        commandWriteMap.put("set", true);
+        commandWriteMap.put("hset", true);
+        commandWriteMap.put("pexpireat", true);
+        commandWriteMap.put("expire", true);
+        commandWriteMap.put("del", true);
+        commandWriteMap.put("incr", true);
+        commandWriteMap.put("decr", true);
+        commandWriteMap.put("zadd", true);
     }
 
     public static void expireIfNeeded(String key){
@@ -339,6 +421,15 @@ public class CommandHandler {
     public static boolean isInteger(String str) {
         // 使用正则表达式判断字符串是否匹配整数模式
         return str.matches("^-?\\d+$");
+    }
+
+    public static boolean isDouble(String str){
+        try {
+            double v = Double.parseDouble(str);
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
 
