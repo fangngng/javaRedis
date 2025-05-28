@@ -6,3 +6,5 @@
 *3\r\n$3\r\nset\r\n$1\r\nx\r\n$1\r\n1\r\n
 *3\r\n$3\r\nset\r\n$1\r\nx\r\n$1\r\n2\r\n
 *3\r\n$3\r\nset\r\n$1\r\nx\r\n$1\r\n2\r\n
+*4\r\n$4\r\nzadd\r\n$4\r\ntest\r\n$1\r\n1\r\n$1\r\nx\r\n
+*4\r\n$4\r\nzadd\r\n$4\r\ntest\r\n$1\r\n2\r\n$1\r\ny\r\n

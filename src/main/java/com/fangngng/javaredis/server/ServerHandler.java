@@ -42,9 +42,6 @@ public class ServerHandler extends SimpleChannelInboundHandler<String> {
 
     private void aofForCommand(RespValue respValue){
         String command = respValue.getArray()[0].getBulk().toLowerCase();
-        if("set".equalsIgnoreCase(command) || "hset".equalsIgnoreCase(command) || "del".equalsIgnoreCase(command)){
-            this.aofPersistent.write(new RESPWrite().write(respValue).getBytes(StandardCharsets.UTF_8));
-        }
         if("expire".equalsIgnoreCase(command)){
             String key = respValue.getArray()[1].getBulk();
             Long expire = CommandHandler.expireMap.get(key);
@@ -55,8 +52,7 @@ public class ServerHandler extends SimpleChannelInboundHandler<String> {
             aofValue.getArray()[1] = respValue.getArray()[1];
             aofValue.getArray()[2] = RespValue.bulk(String.valueOf(expire));
             this.aofPersistent.write(new RESPWrite().write(aofValue).getBytes(StandardCharsets.UTF_8));
-        }
-        if("pexpireat".equalsIgnoreCase(command)){
+        }else if(CommandHandler.commandWriteMap.containsKey(command)){
             this.aofPersistent.write(new RESPWrite().write(respValue).getBytes(StandardCharsets.UTF_8));
         }
     }

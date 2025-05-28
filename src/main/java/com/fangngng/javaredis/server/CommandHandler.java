@@ -3,10 +3,7 @@ package com.fangngng.javaredis.server;
 import com.fangngng.javaredis.server.DTO.ZsetNode;
 import io.netty.util.internal.StringUtil;
 
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -347,7 +344,7 @@ public class CommandHandler {
         };
 
         // zcount key min max
-        Function<RespValue, RespValue> acount = new Function<RespValue, RespValue>() {
+        Function<RespValue, RespValue> zcount = new Function<RespValue, RespValue>() {
             @Override
             public RespValue apply(RespValue respValue) {
                 if(respValue == null || respValue.getArray().length < 4){
@@ -364,17 +361,72 @@ public class CommandHandler {
                     return RespValue.nul();
                 }
 
-//                zsetNodes.
+                NavigableSet<ZsetNode> subset = zsetNodes.subSet(new ZsetNode("", min), true, new ZsetNode("", max), false);
 
-                return null;
+                return RespValue.bulk(String.valueOf(subset.size()));
             }
         };
 
         // zrange
 
-        // zrangebyscore
+        // zrangebyscore key min max
+        Function<RespValue, RespValue> zrangebyscore = new Function<RespValue, RespValue>() {
+            @Override
+            public RespValue apply(RespValue respValue) {
+                if(respValue == null || respValue.getArray().length < 4){
+                    return RespValue.error("error command format");
+                }
 
-        // zrem
+
+                String key = respValue.getArray()[1].getBulk();
+                String min = respValue.getArray()[2].getBulk();
+                String max = respValue.getArray()[3].getBulk();
+
+                ConcurrentSkipListSet<ZsetNode> zsetNodes = zsetMap.get(key);
+                if(zsetNodes == null){
+                    return RespValue.nul();
+                }
+
+                NavigableSet<ZsetNode> subset = zsetNodes.subSet(new ZsetNode("", min), true, new ZsetNode("", max), false);
+                if(!subset.isEmpty()) {
+                    RespValue data = new RespValue();
+                    data.setType("array");
+                    RespValue[] array = new RespValue[subset.size()*2];
+                    int j=0;
+                    for (ZsetNode zsetNode : subset) {
+                        array[j++] = RespValue.bulk(zsetNode.getValue());
+                        array[j++] = RespValue.bulk(zsetNode.getScore());
+                    }
+                    data.setArray(array);
+                    return data;
+                }
+
+                return RespValue.nul();
+            }
+        };
+
+        // zrem key member
+        Function<RespValue, RespValue> zrem = new Function<RespValue, RespValue>() {
+            @Override
+            public RespValue apply(RespValue respValue) {
+                if(respValue == null || respValue.getArray().length < 3){
+                    return RespValue.error("error command format");
+                }
+
+
+                String key = respValue.getArray()[1].getBulk();
+                String member = respValue.getArray()[2].getBulk();
+
+                ConcurrentSkipListSet<ZsetNode> zsetNodes = zsetMap.get(key);
+                if(zsetNodes == null){
+                    return RespValue.nul();
+                }
+
+                zsetNodes.removeIf(zsetNode -> zsetNode.getValue().equalsIgnoreCase(member));
+
+                return RespValue.ok();
+            }
+        };
 
 
         handlers.put("ping", ping);
@@ -396,7 +448,9 @@ public class CommandHandler {
         handlers.put("decr", decr);
 
         handlers.put("zadd", zadd);
-        handlers.put("zadd", zadd);
+        handlers.put("zcount", zcount);
+        handlers.put("zrangebyscore", zrangebyscore);
+        handlers.put("zrem", zrem);
 
 
 
@@ -408,6 +462,7 @@ public class CommandHandler {
         commandWriteMap.put("incr", true);
         commandWriteMap.put("decr", true);
         commandWriteMap.put("zadd", true);
+        commandWriteMap.put("zrem", true);
     }
 
     public static void expireIfNeeded(String key){
